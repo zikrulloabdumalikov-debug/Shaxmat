@@ -8,12 +8,42 @@ export function useChessGame() {
   const [isAiThinking, setIsAiThinking] = useState(false);
   const aiWorkerRef = useRef<Worker | null>(null);
 
+  const updateGameState = useCallback((newGame: Chess, lastMove: Move | null = null) => {
+    setGameState((prev) => ({
+      ...prev,
+      fen: newGame.fen(),
+      turn: newGame.turn(),
+      isCheck: newGame.isCheck(),
+      history: newGame.history(),
+      status: getGameStatus(newGame),
+      lastMove: lastMove ? { from: lastMove.from, to: lastMove.to } : null,
+    }));
+  }, []);
+
+  const setAiModel = useCallback((model: 'minimax' | 'gemini') => {
+    setGameState(prev => ({ ...prev, aiModel: model }));
+  }, []);
+
+  const makeMove = useCallback((move: string | { from: string; to: string; promotion?: string }) => {
+    let success = false;
+    setGame((prevGame) => {
+      const newGame = new Chess(prevGame.fen());
+      try {
+        const result = newGame.move(move);
+        if (result) {
+          success = true;
+          updateGameState(newGame, result);
+          return newGame;
+        }
+      } catch (e) {
+        console.error('Invalid move', e);
+      }
+      return prevGame;
+    });
+    return success;
+  }, [updateGameState]);
+
   useEffect(() => {
-    // Initialize AI Worker
-    // Note: In Vite, we use new Worker(new URL('./ai-worker.ts', import.meta.url))
-    // But for this environment, we'll simulate the worker if it's not easily available
-    // or just run it in the main thread for simplicity if needed, 
-    // but the user asked for Web Worker.
     try {
       aiWorkerRef.current = new Worker(new URL('../lib/ai-worker.ts', import.meta.url), { type: 'module' });
       aiWorkerRef.current.onmessage = (e) => {
@@ -30,48 +60,47 @@ export function useChessGame() {
     return () => {
       aiWorkerRef.current?.terminate();
     };
-  }, []);
+  }, [makeMove]);
 
-  const updateGameState = useCallback((newGame: Chess, lastMove: Move | null = null) => {
-    setGameState({
-      fen: newGame.fen(),
-      turn: newGame.turn(),
-      isCheck: newGame.isCheck(),
-      history: newGame.history(),
-      status: getGameStatus(newGame),
-      lastMove: lastMove ? { from: lastMove.from, to: lastMove.to } : null,
-    });
-  }, []);
-
-  const makeMove = useCallback((move: string | { from: string; to: string; promotion?: string }) => {
-    try {
-      const newGame = new Chess(game.fen());
-      const result = newGame.move(move);
-      if (result) {
-        setGame(newGame);
-        updateGameState(newGame, result);
-        return true;
-      }
-    } catch (e) {
-      return false;
-    }
-    return false;
-  }, [game, updateGameState]);
-
-  const requestAiMove = useCallback((depth: number = 3) => {
+  const requestAiMove = useCallback(async (depth: number = 3) => {
     if (gameState.status !== 'playing' || isAiThinking) return;
 
     setIsAiThinking(true);
-    if (aiWorkerRef.current) {
-      aiWorkerRef.current.postMessage({ fen: game.fen(), depth });
+
+    if (gameState.aiModel === 'gemini') {
+      const { getGeminiMove } = await import('../services/geminiService');
+      const move = await getGeminiMove(game.fen(), gameState.history);
+      if (move) {
+        const success = makeMove(move);
+        if (!success) {
+          // If Gemini fails with an invalid move, fallback to minimax
+          console.warn("Gemini provided invalid move, falling back to Minimax");
+          if (aiWorkerRef.current) {
+            aiWorkerRef.current.postMessage({ fen: game.fen(), depth });
+          } else {
+            const { getBestMove } = await import('../lib/ai-worker');
+            const bestMove = getBestMove(new Chess(game.fen()), depth);
+            if (bestMove) makeMove(bestMove);
+            setIsAiThinking(false);
+          }
+          return;
+        }
+      }
+      setIsAiThinking(false);
     } else {
-      // Fallback if worker fails
-      setTimeout(() => {
-        // Simple fallback would go here
-        setIsAiThinking(false);
-      }, 500);
+      if (aiWorkerRef.current) {
+        aiWorkerRef.current.postMessage({ fen: game.fen(), depth });
+      } else {
+        // Fallback: Run AI in a timeout to avoid blocking UI too much
+        setTimeout(async () => {
+          const { getBestMove } = await import('../lib/ai-worker');
+          const move = getBestMove(new Chess(game.fen()), depth);
+          if (move) makeMove(move);
+          setIsAiThinking(false);
+        }, 100);
+      }
     }
-  }, [game, gameState.status, isAiThinking]);
+  }, [game, gameState.status, gameState.aiModel, gameState.history, isAiThinking, makeMove]);
 
   const resetGame = useCallback(() => {
     const newGame = new Chess();
@@ -80,15 +109,15 @@ export function useChessGame() {
   }, [updateGameState]);
 
   const undoMove = useCallback(() => {
-    const newGame = new Chess(game.fen());
-    newGame.undo();
-    // If playing against AI, undo twice
-    if (newGame.turn() === 'b') {
-        newGame.undo();
-    }
-    setGame(newGame);
-    updateGameState(newGame);
-  }, [game, updateGameState]);
+    setGame((prevGame) => {
+      const newGame = new Chess(prevGame.fen());
+      newGame.undo();
+      // If playing against AI, undo twice to get back to user's turn
+      newGame.undo();
+      updateGameState(newGame);
+      return newGame;
+    });
+  }, [updateGameState]);
 
   return {
     game,
@@ -98,5 +127,6 @@ export function useChessGame() {
     undoMove,
     isAiThinking,
     requestAiMove,
+    setAiModel,
   };
 }
