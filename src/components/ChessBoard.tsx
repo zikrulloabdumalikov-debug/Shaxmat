@@ -1,334 +1,208 @@
-import React from 'react';
-import { motion } from 'motion/react';
-import { Chess, Square } from 'chess.js';
-import { GameState } from '../types';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import React, { useState, useEffect } from 'react';
+import { Chess, Square, Move } from 'chess.js';
 import { useGameStore } from '../store/useGameStore';
+import { motion, AnimatePresence } from 'motion/react';
+import clsx from 'clsx';
 import { PromotionModal } from './PromotionModal';
 import { EvaluationBar } from './EvaluationBar';
 import { ChessTimer } from './ChessTimer';
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
-const THEMES = {
-  classic: {
-    dark: "bg-[#779556]",
-    light: "bg-[#ebecd0]",
-    lastMove: "bg-yellow-100/40",
-    selected: "bg-yellow-200/60",
-  },
-  wood: {
-    dark: "bg-[#b58863]",
-    light: "bg-[#f0d9b5]",
-    lastMove: "bg-orange-200/40",
-    selected: "bg-orange-300/60",
-  },
-  dark: {
-    dark: "bg-[#4b7399]",
-    light: "bg-[#eae9d2]",
-    lastMove: "bg-blue-200/40",
-    selected: "bg-blue-300/60",
-  }
-};
-
 interface ChessBoardProps {
-  gameState: GameState;
-  onMove: (from: string, to: string, promotion?: string) => void;
-  disabled?: boolean;
-  viewMode?: '2d' | '3d';
-  isFlipped?: boolean;
+  chess: Chess;
+  onMove: (move: { from: string; to: string; promotion?: string }) => boolean;
+  isThinking: boolean;
 }
 
-const PIECE_IMAGES_2D: Record<string, string> = {
-  wP: 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
-  wN: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
-  wB: 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
-  wR: 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
-  wQ: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
-  wK: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
-  bP: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
-  bN: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
-  bB: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
-  bR: 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
-  bQ: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
-  bK: 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
-};
+export const ChessBoard: React.FC<ChessBoardProps> = ({ chess, onMove, isThinking }) => {
+  const { boardTheme, showLegalMoves, soundEnabled, gameState, whiteTime, blackTime } = useGameStore();
+  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  const [possibleMoves, setPossibleMoves] = useState<Move[]>([]);
+  const [promotionMove, setPromotionMove] = useState<{ from: string; to: string } | null>(null);
+  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
 
-const PIECE_IMAGES_3D: Record<string, string> = {
-  wP: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/wp.png',
-  wN: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/wn.png',
-  wB: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/wb.png',
-  wR: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/wr.png',
-  wQ: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/wq.png',
-  wK: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/wk.png',
-  bP: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/bp.png',
-  bN: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/bn.png',
-  bB: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/bb.png',
-  bR: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/br.png',
-  bQ: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/bq.png',
-  bK: 'https://images.chesscomfiles.com/chess-themes/pieces/3d_plastic/150/bk.png',
-};
-
-export const ChessBoard: React.FC<ChessBoardProps> = ({ gameState, onMove, disabled, viewMode = '2d', isFlipped = false }) => {
-  const [selectedSquare, setSelectedSquare] = React.useState<string | null>(null);
-  const [validMoves, setValidMoves] = React.useState<string[]>([]);
-  const setPendingPromotion = useGameStore(state => state.setPendingPromotion);
-  
-  const game = React.useMemo(() => new Chess(gameState.fen), [gameState.fen]);
-  const board = isFlipped ? [...game.board()].reverse().map(row => [...row].reverse()) : game.board();
-  const theme = THEMES[gameState.theme || 'classic'];
-
-  // Sound effects
-  const playSound = (type: 'move' | 'capture' | 'check' | 'mate') => {
-    const sounds = {
-      move: 'https://images.chesscomfiles.com/chess-themes/pieces/base/sounds/move-self.mp3',
-      capture: 'https://images.chesscomfiles.com/chess-themes/pieces/base/sounds/capture.mp3',
-      check: 'https://images.chesscomfiles.com/chess-themes/pieces/base/sounds/move-check.mp3',
-      mate: 'https://images.chesscomfiles.com/chess-themes/pieces/base/sounds/game-end.mp3',
-    };
-    const audio = new Audio(sounds[type]);
-    audio.play().catch(() => {});
-
-    // Vibration for mobile
-    if (navigator.vibrate) {
-      navigator.vibrate(type === 'mate' ? [100, 50, 100] : 20);
+  useEffect(() => {
+    const history = chess.history({ verbose: true });
+    if (history.length > 0) {
+      const last = history[history.length - 1];
+      setLastMove({ from: last.from, to: last.to });
+    } else {
+      setLastMove(null);
     }
+  }, [chess, gameState.fen]);
+
+  const playSound = (moveType: 'move' | 'capture' | 'check' | 'castle' | 'promote') => {
+    if (!soundEnabled) return;
+    // Placeholder for sound logic - in a real app, use Audio API
+    // const audio = new Audio(`/sounds/${moveType}.mp3`);
+    // audio.play().catch(() => {});
   };
 
-  React.useEffect(() => {
-    if (gameState.lastMove) {
-      const isCapture = gameState.history[gameState.history.length - 1]?.includes('x');
-      if (gameState.status === 'checkmate') playSound('mate');
-      else if (gameState.isCheck) playSound('check');
-      else if (isCapture) playSound('capture');
-      else playSound('move');
-    }
-  }, [gameState.fen]);
+  const handleSquareClick = (square: Square) => {
+    // If waiting for promotion, ignore clicks
+    if (promotionMove) return;
 
-  const handleSquareClick = (square: string) => {
-    if (disabled) return;
-
+    // If clicking the same square, deselect
     if (selectedSquare === square) {
       setSelectedSquare(null);
-      setValidMoves([]);
+      setPossibleMoves([]);
       return;
     }
 
     // If a square is already selected, try to move
     if (selectedSquare) {
-      const move = game.moves({ square: selectedSquare as Square, verbose: true })
-        .find(m => m.to === square);
+      const moveAttempt = {
+        from: selectedSquare,
+        to: square,
+        promotion: 'q', // Default to queen for validation check
+      };
 
-      if (move) {
-        // Check for promotion
-        if (move.flags.includes('p')) {
-          setPendingPromotion({ from: selectedSquare, to: square });
-        } else {
-          onMove(selectedSquare, square);
+      // Check if move is valid (including promotion)
+      const moves = chess.moves({ verbose: true });
+      const validMove = moves.find(m => m.from === selectedSquare && m.to === square);
+
+      if (validMove) {
+        if (validMove.promotion) {
+          setPromotionMove({ from: selectedSquare, to: square });
+          return;
         }
-        setSelectedSquare(null);
-        setValidMoves([]);
-        return;
+
+        const success = onMove(moveAttempt);
+        if (success) {
+          playSound(chess.isCheck() ? 'check' : (chess.get(square) ? 'capture' : 'move'));
+          setSelectedSquare(null);
+          setPossibleMoves([]);
+          return;
+        }
       }
     }
 
-    // Select new square if it has a piece of the current turn's color
-    const piece = game.get(square as Square);
-    if (piece && piece.color === gameState.turn) {
+    // Select new square
+    const piece = chess.get(square);
+    if (piece && piece.color === chess.turn()) {
       setSelectedSquare(square);
-      const moves = game.moves({ square: square as Square, verbose: true });
-      setValidMoves(moves.map(m => m.to));
+      if (showLegalMoves) {
+        const moves = chess.moves({ square, verbose: true });
+        setPossibleMoves(moves);
+      }
     } else {
       setSelectedSquare(null);
-      setValidMoves([]);
+      setPossibleMoves([]);
     }
   };
 
-  const handleDragStart = (e: React.DragEvent, square: string) => {
-    if (disabled) return;
-    const piece = game.get(square as Square);
-    if (piece && piece.color === gameState.turn) {
-      e.dataTransfer.setData('sourceSquare', square);
-      setSelectedSquare(square);
-      const moves = game.moves({ square: square as Square, verbose: true });
-      setValidMoves(moves.map(m => m.to));
-      
-      // Create a ghost image or just let it be
-      const img = new Image();
-      img.src = pieceImages[`${piece.color}${piece.type.toUpperCase()}`];
-      e.dataTransfer.setDragImage(img, 25, 25);
+  const handlePromotion = (piece: 'q' | 'r' | 'b' | 'n') => {
+    if (promotionMove) {
+      onMove({ ...promotionMove, promotion: piece });
+      setPromotionMove(null);
+      setSelectedSquare(null);
+      setPossibleMoves([]);
+      playSound('promote');
     }
   };
 
-  const handleDrop = (e: React.DragEvent, targetSquare: string) => {
-    e.preventDefault();
-    if (disabled) return;
-    const sourceSquare = e.dataTransfer.getData('sourceSquare');
-    if (sourceSquare && sourceSquare !== targetSquare) {
-      const move = game.moves({ square: sourceSquare as Square, verbose: true })
-        .find(m => m.to === targetSquare);
-
-      if (move) {
-        if (move.flags.includes('p')) {
-          setPendingPromotion({ from: sourceSquare, to: targetSquare });
-        } else {
-          onMove(sourceSquare, targetSquare);
-        }
-      }
-    }
-    setSelectedSquare(null);
-    setValidMoves([]);
+  const getPieceImage = (piece: { type: string; color: string } | null) => {
+    if (!piece) return null;
+    const fileName = `${piece.color}${piece.type.toUpperCase()}.png`;
+    // Using a public chess piece set (e.g., from Wikimedia or a CDN)
+    // For this example, we'll assume local assets or a reliable CDN
+    return `https://images.chesscomfiles.com/chess-themes/pieces/neo/150/${piece.color}${piece.type}.png`;
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const pieceImages = viewMode === '3d' ? PIECE_IMAGES_3D : PIECE_IMAGES_2D;
-  const letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-  const displayLetters = isFlipped ? [...letters].reverse() : letters;
-  const numbers = [8, 7, 6, 5, 4, 3, 2, 1];
-  const displayNumbers = isFlipped ? [...numbers].reverse() : numbers;
+  const board = chess.board();
+  const isFlipped = false; // Can be added to store if user wants to flip board
 
   return (
-    <div className="relative flex flex-col gap-4 w-full max-w-[680px]">
-      {/* Opponent Timer & Info */}
-      <div className="flex items-center justify-between px-6">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center">
-            <span className="text-zinc-400 font-bold">{isFlipped ? 'W' : 'B'}</span>
-          </div>
-          <div>
-            <div className="text-sm font-bold text-zinc-300">{isFlipped ? 'Player 1' : 'Opponent'}</div>
-            <div className="text-[10px] text-zinc-500 font-mono">Rating: 1500</div>
-          </div>
-        </div>
-        <ChessTimer 
-          time={isFlipped ? gameState.timer.w : gameState.timer.b} 
-          isActive={gameState.timer.isActive && gameState.turn === (isFlipped ? 'w' : 'b')}
-          isLowTime={(isFlipped ? gameState.timer.w : gameState.timer.b) < 30}
-          side="top"
-        />
+    <div className="flex flex-col items-center gap-4 select-none">
+      <div className="w-full flex justify-between items-center px-4">
+        <ChessTimer color="b" time={blackTime} isActive={gameState.turn === 'b'} />
+        <div className="text-white/60 text-sm font-mono">Opponent (AI)</div>
       </div>
 
-      <div className="relative flex gap-4 w-full p-6 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl">
-        <EvaluationBar evaluation={gameState.evaluation} isFlipped={isFlipped} />
+      <div className="relative flex">
+        <EvaluationBar score={0.5} /> {/* Placeholder score */}
         
-        <div className="flex-1">
-        <PromotionModal />
-        {/* Top Letters */}
-      <div className="grid grid-cols-8 ml-6 mr-6 h-6 items-center">
-        {displayLetters.map(letter => (
-          <span key={letter} className="text-[10px] font-bold text-zinc-600 text-center uppercase tracking-widest">{letter}</span>
-        ))}
-      </div>
-
-      <div className="flex">
-        {/* Left Numbers */}
-        <div className="flex flex-col justify-around w-6 py-2">
-          {displayNumbers.map(num => (
-            <span key={num} className="text-[10px] font-bold text-zinc-600 text-center">{num}</span>
-          ))}
-        </div>
-
-        {/* The Board */}
-        <div className="relative aspect-square flex-1 border-2 border-zinc-800 rounded-sm overflow-hidden bg-zinc-900">
-          <div className="grid grid-cols-8 grid-rows-8 h-full w-full">
-            {board.map((row, i) =>
-              row.map((piece, j) => {
-                const square = isFlipped 
-                  ? `${String.fromCharCode(104 - j)}${1 + i}`
-                  : `${String.fromCharCode(97 + j)}${8 - i}`;
-                const isDark = isFlipped ? (i + j) % 2 === 1 : (i + j) % 2 === 1; // Actually it's the same
+        <div className="relative w-[min(80vw,600px)] h-[min(80vw,600px)] bg-[#262421] rounded-lg shadow-2xl overflow-hidden border-4 border-[#302e2b]">
+          <div className="grid grid-cols-8 grid-rows-8 w-full h-full">
+            {(isFlipped ? [...board].reverse() : board).map((row, rowIndex) =>
+              (isFlipped ? [...row].reverse() : row).map((piece, colIndex) => {
+                const actualRow = isFlipped ? 7 - rowIndex : rowIndex;
+                const actualCol = isFlipped ? 7 - colIndex : colIndex;
+                const square = String.fromCharCode(97 + actualCol) + (8 - actualRow) as Square;
+                const isBlack = (actualRow + actualCol) % 2 === 1;
                 const isSelected = selectedSquare === square;
-                const isValidMove = validMoves.includes(square);
-                const isLastMove = gameState.lastMove && (gameState.lastMove.from === square || gameState.lastMove.to === square);
-                const isCheck = gameState.isCheck && piece?.type === 'k' && piece?.color === gameState.turn;
+                const isLastMove = lastMove && (lastMove.from === square || lastMove.to === square);
+                const isPossibleMove = possibleMoves.some(m => m.to === square);
+                const isCapture = isPossibleMove && piece;
+                const isCheck = piece?.type === 'k' && piece.color === chess.turn() && chess.isCheck();
 
                 return (
-                    <div
-                      key={square}
-                      onClick={() => handleSquareClick(square)}
-                      onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(e, square)}
-                      className={cn(
-                        "relative flex items-center justify-center cursor-pointer transition-colors duration-200",
-                        isDark ? theme.dark : theme.light,
-                        isSelected && theme.selected,
-                        isLastMove && !isSelected && theme.lastMove,
-                        isCheck && "bg-red-500/60"
-                      )}
-                    >
-                    {/* Valid Move Indicator */}
-                    {isValidMove && (
-                      <div className={cn(
-                        "absolute z-10 rounded-full",
-                        piece ? "w-full h-full border-4 border-black/10" : "w-3 h-3 bg-black/10"
-                      )} />
+                  <div
+                    key={square}
+                    onClick={() => handleSquareClick(square)}
+                    className={clsx(
+                      'relative flex items-center justify-center w-full h-full transition-colors duration-100',
+                      isBlack 
+                        ? (boardTheme === 'glass' ? 'bg-white/10' : 'bg-[#769656]') 
+                        : (boardTheme === 'glass' ? 'bg-white/5' : 'bg-[#eeeed2]'),
+                      isSelected && 'bg-[#baca44]',
+                      isLastMove && !isSelected && 'bg-[#f5f682]',
+                      isCheck && 'bg-red-500/50 radial-gradient'
+                    )}
+                  >
+                    {/* Rank/File Labels */}
+                    {colIndex === 0 && (
+                      <span className={clsx("absolute top-0.5 left-0.5 text-[10px] font-bold", isBlack ? "text-[#eeeed2]" : "text-[#769656]")}>
+                        {8 - actualRow}
+                      </span>
+                    )}
+                    {rowIndex === 7 && (
+                      <span className={clsx("absolute bottom-0.5 right-0.5 text-[10px] font-bold", isBlack ? "text-[#eeeed2]" : "text-[#769656]")}>
+                        {String.fromCharCode(97 + actualCol)}
+                      </span>
+                    )}
+
+                    {/* Move Indicators */}
+                    {isPossibleMove && !isCapture && (
+                      <div className="absolute w-1/3 h-1/3 bg-black/10 rounded-full" />
+                    )}
+                    {isCapture && (
+                      <div className="absolute w-full h-full border-4 border-black/10 rounded-full" />
                     )}
 
                     {/* Piece */}
-                    {piece && (
-                      <motion.img
-                        layoutId={piece.type + piece.color + i + j}
-                        src={pieceImages[`${piece.color}${piece.type.toUpperCase()}`]}
-                        alt={`${piece.color} ${piece.type}`}
-                        draggable={!disabled && piece.color === gameState.turn}
-                        onDragStart={(e) => handleDragStart(e, square)}
-                        className={cn(
-                          "z-20 select-none",
-                          viewMode === '3d' ? "w-[95%] h-[95%] -translate-y-1 drop-shadow-xl" : "w-[85%] h-[85%]"
-                        )}
-                        initial={false}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                      />
-                    )}
+                    <AnimatePresence>
+                      {piece && (
+                        <motion.img
+                          initial={{ scale: 0.8, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0.8, opacity: 0 }}
+                          transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                          src={getPieceImage(piece)}
+                          alt={`${piece.color} ${piece.type}`}
+                          className="w-[90%] h-[90%] object-contain z-10 cursor-pointer hover:scale-105 transition-transform"
+                        />
+                      )}
+                    </AnimatePresence>
                   </div>
                 );
               })
             )}
           </div>
-        </div>
 
-        {/* Right Numbers */}
-        <div className="flex flex-col justify-around w-6 py-2">
-          {displayNumbers.map(num => (
-            <span key={num} className="text-[10px] font-bold text-zinc-600 text-center">{num}</span>
-          ))}
+          {promotionMove && (
+            <PromotionModal
+              color={chess.turn()}
+              onSelect={handlePromotion}
+              onClose={() => setPromotionMove(null)}
+            />
+          )}
         </div>
       </div>
 
-      {/* Bottom Letters */}
-      <div className="grid grid-cols-8 ml-6 mr-6 h-6 items-center">
-        {displayLetters.map(letter => (
-          <span key={letter} className="text-[10px] font-bold text-zinc-600 text-center uppercase tracking-widest">{letter}</span>
-        ))}
+      <div className="w-full flex justify-between items-center px-4">
+        <ChessTimer color="w" time={whiteTime} isActive={gameState.turn === 'w'} />
+        <div className="text-white/60 text-sm font-mono">You</div>
       </div>
     </div>
-  </div>
-
-  {/* Player Timer & Info */}
-  <div className="flex items-center justify-between px-6">
-    <div className="flex items-center gap-3">
-      <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center">
-        <span className="text-zinc-400 font-bold">{isFlipped ? 'B' : 'W'}</span>
-      </div>
-      <div>
-        <div className="text-sm font-bold text-zinc-300">{isFlipped ? 'Opponent' : 'You'}</div>
-        <div className="text-[10px] text-zinc-500 font-mono">Rating: 1500</div>
-      </div>
-    </div>
-    <ChessTimer 
-      time={isFlipped ? gameState.timer.b : gameState.timer.w} 
-      isActive={gameState.timer.isActive && gameState.turn === (isFlipped ? 'b' : 'w')}
-      isLowTime={(isFlipped ? gameState.timer.b : gameState.timer.w) < 30}
-      side="bottom"
-    />
-  </div>
-</div>
-);
+  );
 };

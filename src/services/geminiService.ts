@@ -1,27 +1,37 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const apiKey = process.env.GEMINI_API_KEY || '';
+const ai = new GoogleGenAI({ apiKey });
 
-export async function getGeminiMove(fen: string, history: string[]): Promise<string | null> {
+export const getGeminiMove = async (fen: string, history: string[]): Promise<string | null> => {
+  if (!apiKey) {
+    console.warn('Gemini API key is missing');
+    return null;
+  }
+
   try {
+    const prompt = `
+      You are a chess grandmaster engine. 
+      Current FEN: ${fen}
+      Move History: ${history.join(' ')}
+      
+      Analyze the position and provide the best move for the current player in Standard Algebraic Notation (SAN).
+      Only return the move string (e.g., "e4", "Nf3", "O-O"). Do not provide explanation.
+    `;
+
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `You are a Grandmaster chess player. 
-      Current board position (FEN): ${fen}
-      Move history: ${history.join(", ")}
-      
-      Analyze the position and provide the best next move in Standard Algebraic Notation (SAN) or UCI format (e.g., "e4", "Nf3", "e2e4").
-      Only return the move string, nothing else.`,
-      config: {
-        temperature: 0.1,
-        responseMimeType: "text/plain",
-      },
+      contents: prompt,
     });
 
     const move = response.text?.trim();
-    return move || null;
+    // Basic validation: should be a short string
+    if (move && move.length < 10) {
+      return move;
+    }
+    return null;
   } catch (error) {
-    console.error("Gemini AI Error:", error);
+    console.error('Error fetching Gemini move:', error);
     return null;
   }
-}
+};

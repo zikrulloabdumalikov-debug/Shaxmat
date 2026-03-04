@@ -5,34 +5,36 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-@layer base {
-  body {
-    @apply bg-zinc-950 text-zinc-100 antialiased;
-  }
+body {
+  background-color: #161512;
+  color: #ffffff;
 }
 
-@layer components {
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-track {
-    @apply bg-transparent;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-zinc-700 rounded-full hover:bg-zinc-600 transition-colors;
-  }
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
 }
 
-/* Chess Board Animations */
-.piece-move-enter {
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Piece Animation */
+.piece-enter {
   opacity: 0;
-  transform: scale(0.5);
+  transform: scale(0.8);
 }
-
-.piece-move-enter-active {
+.piece-enter-active {
   opacity: 1;
   transform: scale(1);
-  transition: all 300ms ease-out;
+  transition: opacity 200ms, transform 200ms;
 }

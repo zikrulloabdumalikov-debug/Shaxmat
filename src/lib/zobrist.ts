@@ -1,38 +1,46 @@
-/**
- * Simple Zobrist Hashing implementation for chess positions.
- * This is used for position hashing as requested in the technical specs.
- */
+// Simple Zobrist hashing implementation for position hashing
+// This is a simplified version for demonstration
 
-// Random 64-bit numbers for each piece on each square
-// 12 pieces (6 white, 6 black) * 64 squares
-const zobristTable: bigint[][] = Array.from({ length: 64 }, () => 
-  Array.from({ length: 12 }, () => BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)) << 32n | BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)))
-);
+const ZOBRIST_KEYS: Record<string, number> = {};
 
-const sideToMove: bigint = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)) << 32n | BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
+function randomInt() {
+  return Math.floor(Math.random() * 4294967296);
+}
 
-const pieceToIndex: Record<string, number> = {
-  'wP': 0, 'wN': 1, 'wB': 2, 'wR': 3, 'wQ': 4, 'wK': 5,
-  'bP': 6, 'bN': 7, 'bB': 8, 'bR': 9, 'bQ': 10, 'bK': 11
-};
+function initZobrist() {
+  const pieces = ['p', 'n', 'b', 'r', 'q', 'k', 'P', 'N', 'B', 'R', 'Q', 'K'];
+  for (let i = 0; i < 64; i++) {
+    for (const piece of pieces) {
+      ZOBRIST_KEYS[`${i}-${piece}`] = randomInt();
+    }
+  }
+  ZOBRIST_KEYS['blackMove'] = randomInt();
+  // Add castling and en passant keys as needed
+}
 
-export function calculateZobristHash(board: any[][], turn: 'w' | 'b'): string {
-  let hash = 0n;
+initZobrist();
 
-  for (let i = 0; i < 8; i++) {
-    for (let j = 0; j < 8; j++) {
-      const piece = board[i][j];
-      if (piece) {
-        const squareIndex = i * 8 + j;
-        const pieceIndex = pieceToIndex[`${piece.color}${piece.type.toUpperCase()}`];
-        hash ^= zobristTable[squareIndex][pieceIndex];
-      }
+export function computeHash(fen: string): number {
+  let hash = 0;
+  const [position, turn] = fen.split(' ');
+  
+  let square = 0;
+  for (let i = 0; i < position.length; i++) {
+    const char = position[i];
+    if (char === '/') continue;
+    
+    if (/\d/.test(char)) {
+      square += parseInt(char);
+    } else {
+      const key = ZOBRIST_KEYS[`${square}-${char}`];
+      if (key) hash ^= key;
+      square++;
     }
   }
 
   if (turn === 'b') {
-    hash ^= sideToMove;
+    hash ^= ZOBRIST_KEYS['blackMove'];
   }
 
-  return hash.toString(16);
+  return hash;
 }

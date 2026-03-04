@@ -1,38 +1,31 @@
 import React from 'react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+import clsx from 'clsx';
+import { Clock } from 'lucide-react';
 
 interface ChessTimerProps {
+  color: 'w' | 'b';
   time: number;
   isActive: boolean;
-  isLowTime: boolean;
-  side: 'top' | 'bottom';
 }
 
-export const ChessTimer: React.FC<ChessTimerProps> = ({ time, isActive, isLowTime, side }) => {
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    const ms = Math.floor((seconds % 1) * 10);
-    
-    if (seconds < 10) {
-      return `${secs}.${ms}`;
-    }
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+export const ChessTimer: React.FC<ChessTimerProps> = ({ color, time, isActive }) => {
+  const minutes = Math.floor(time / 60);
+  const seconds = time % 60;
+  const isLowTime = time < 30;
 
   return (
-    <div className={cn(
-      "px-4 py-2 rounded-lg font-mono text-xl font-bold transition-all duration-300 border-2",
-      isActive 
-        ? (isLowTime ? "bg-red-900/40 border-red-500 text-red-100 shadow-[0_0_15px_rgba(239,68,68,0.3)]" : "bg-zinc-800 border-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.2)]")
-        : "bg-zinc-900 border-zinc-800 text-zinc-500"
-    )}>
-      {formatTime(time)}
+    <div
+      className={clsx(
+        'flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-300',
+        isActive
+          ? (color === 'w' ? 'bg-white text-black shadow-lg scale-105' : 'bg-black text-white shadow-lg scale-105 border border-white/20')
+          : 'bg-white/5 text-white/40'
+      )}
+    >
+      <Clock size={16} className={clsx(isActive && 'animate-pulse')} />
+      <span className={clsx('font-mono text-xl font-bold', isLowTime && isActive && 'text-red-500 animate-pulse')}>
+        {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+      </span>
     </div>
   );
 };

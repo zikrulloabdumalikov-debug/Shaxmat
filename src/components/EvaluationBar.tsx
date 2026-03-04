@@ -2,37 +2,23 @@ import React from 'react';
 import { motion } from 'motion/react';
 
 interface EvaluationBarProps {
-  evaluation: number; // Positive for white, negative for black
-  isFlipped?: boolean;
+  score: number; // -10 to 10, where positive is white advantage
 }
 
-export const EvaluationBar: React.FC<EvaluationBarProps> = ({ evaluation, isFlipped }) => {
-  // Clamp evaluation to [-5, 5] for visual representation
-  const clampedEval = Math.max(-5, Math.min(5, evaluation));
-  const percentage = ((clampedEval + 5) / 10) * 100;
-  
-  // If flipped, black is on top, white on bottom
-  const whitePercentage = isFlipped ? 100 - percentage : percentage;
+export const EvaluationBar: React.FC<EvaluationBarProps> = ({ score }) => {
+  // Clamp score between -5 and 5 for display purposes
+  const clampedScore = Math.max(-5, Math.min(5, score));
+  // Convert to percentage (0% = black winning, 100% = white winning)
+  const percentage = ((clampedScore + 5) / 10) * 100;
 
   return (
-    <div className="relative w-2 h-full bg-zinc-800 rounded-full overflow-hidden flex flex-col">
+    <div className="absolute -left-6 top-0 bottom-0 w-2 bg-[#302e2b] rounded-full overflow-hidden border border-white/10 hidden md:block">
       <motion.div
-        initial={false}
-        animate={{ height: `${100 - whitePercentage}%` }}
-        className="w-full bg-zinc-900 transition-all duration-500"
+        className="absolute bottom-0 left-0 right-0 bg-white"
+        initial={{ height: '50%' }}
+        animate={{ height: `${percentage}%` }}
+        transition={{ type: 'spring', stiffness: 100, damping: 20 }}
       />
-      <motion.div
-        initial={false}
-        animate={{ height: `${whitePercentage}%` }}
-        className="w-full bg-white transition-all duration-500"
-      />
-      
-      {/* Eval Text */}
-      <div className="absolute inset-0 flex flex-col items-center justify-between py-2 pointer-events-none">
-        <span className={whitePercentage < 50 ? "text-[8px] font-bold text-white" : "text-[8px] font-bold text-black"}>
-          {evaluation > 0 ? `+${evaluation.toFixed(1)}` : evaluation.toFixed(1)}
-        </span>
-      </div>
     </div>
   );
 };
